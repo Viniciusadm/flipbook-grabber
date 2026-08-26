@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "Flipbook Grabber",
+  "version": "0.1.0",
+  "description": "Baixa publicações do AnyFlip página a página e gera um PDF ou EPUB.",
+  "permissions": [
+    "scripting",
+    "downloads",
+    "sidePanel",
+    "offscreen"
+  ],
+  "host_permissions": [
+    "*://*.anyflip.com/*"
+  ],
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {
+    "default_title": "Flipbook Grabber",
+    "default_icon": {
+      "16": "assets/icon16.png",
+      "48": "assets/icon48.png",
+      "128": "assets/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "assets/icon16.png",
+    "48": "assets/icon48.png",
+    "128": "assets/icon128.png"
+  }
+}
