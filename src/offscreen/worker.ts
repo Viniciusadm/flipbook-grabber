@@ -5,24 +5,24 @@ import { buildPdf, type PdfPageImage } from '@/builders/pdf'
 import type { AnyMessage } from '@/shared/messages'
 import type { OutputFormat, Publication } from '@/shared/types'
 
-let currentAbort: AbortController | null = null
+let current: { jobId: string; abort: AbortController } | null = null
 
 function send(message: AnyMessage): void {
   chrome.runtime.sendMessage(message).catch(() => undefined)
 }
 
-async function run(publication: Publication, format: OutputFormat): Promise<void> {
-  currentAbort?.abort()
+async function run(jobId: string, publication: Publication, format: OutputFormat): Promise<void> {
+  current?.abort.abort()
   const abort = new AbortController()
-  currentAbort = abort
+  current = { jobId, abort }
 
   const blobs = await downloadAll(publication.pageUrls, {
     concurrency: 4,
     signal: abort.signal,
-    onProgress: (downloaded, total) => send({ type: 'worker/progress', downloaded, total }),
+    onProgress: (downloaded, total) => send({ type: 'worker/progress', jobId, downloaded, total }),
   })
 
-  send({ type: 'worker/building' })
+  send({ type: 'worker/building', jobId })
 
   let file: Blob
   let fileName: string
@@ -40,21 +40,22 @@ async function run(publication: Publication, format: OutputFormat): Promise<void
 
   const url = URL.createObjectURL(file)
   try {
-    await chrome.runtime.sendMessage({ type: 'worker/saveFile', url, fileName })
+    await chrome.runtime.sendMessage({ type: 'worker/saveFile', jobId, url, fileName })
   } finally {
     setTimeout(() => URL.revokeObjectURL(url), 60_000)
   }
 
-  send({ type: 'worker/done', fileName })
+  send({ type: 'worker/done', jobId, fileName })
 }
 
 chrome.runtime.onMessage.addListener((message: AnyMessage) => {
   if (message.type === 'bg/run') {
-    run(message.publication, message.format).catch((error: unknown) => {
+    const { jobId } = message
+    run(jobId, message.publication, message.format).catch((error: unknown) => {
       const isAbort = error instanceof DOMException && error.name === 'AbortError'
-      if (!isAbort) send({ type: 'worker/error', message: String((error as Error)?.message ?? error) })
+      if (!isAbort) send({ type: 'worker/error', jobId, message: String((error as Error)?.message ?? error) })
     })
   }
-  if (message.type === 'panel/cancel') currentAbort?.abort()
+  if (message.type === 'panel/cancel' && current?.jobId === message.jobId) current.abort.abort()
   return undefined
 })

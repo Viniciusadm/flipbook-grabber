@@ -7,30 +7,33 @@ export interface Publication {
   thumbUrls: string[]
 }
 
-export type JobPhase =
-  | 'idle'
-  | 'discovering'
-  | 'downloading'
-  | 'building'
-  | 'done'
-  | 'error'
+export type JobPhase = 'queued' | 'downloading' | 'building' | 'done' | 'error'
 
-export interface JobState {
-  phase: JobPhase
-  publication: Publication | null
+export interface Job {
+  id: string
+  publication: Publication
   format: OutputFormat
+  phase: JobPhase
   downloaded: number
   total: number
   fileName: string | null
   error: string | null
 }
 
-export const initialJobState: JobState = {
-  phase: 'idle',
-  publication: null,
-  format: 'pdf',
-  downloaded: 0,
-  total: 0,
-  fileName: null,
-  error: null,
+export type DetectionPhase = 'idle' | 'discovering' | 'ready' | 'unsupported' | 'error'
+
+export interface Detection {
+  phase: DetectionPhase
+  publication: Publication | null
+  error: string | null
+}
+
+export interface AppState {
+  detection: Detection
+  jobs: Job[]
+}
+
+export const initialAppState: AppState = {
+  detection: { phase: 'idle', publication: null, error: null },
+  jobs: [],
 }

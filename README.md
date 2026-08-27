@@ -42,6 +42,8 @@ Funciona no Chrome e no Edge.
 
 Abra a publicação no AnyFlip, espere carregar e clique no ícone da extensão. O painel lateral abre já procurando as páginas. Escolha PDF ou EPUB, clique em **Baixar publicação** e pronto.
 
+Com um download em andamento, é só abrir outra publicação: o painel detecta a nova página sozinho e o botão vira **Adicionar à fila**. Os downloads rodam um por vez, e cada um aparece na lista com seu próprio progresso, podendo ser cancelado sem afetar os demais.
+
 ## Por baixo do capô
 
 Baixar um flipbook parece simples até você tentar. Três detalhes atrapalham:
