@@ -2,17 +2,27 @@ import { adapterFor } from '@/adapters/anyflip'
 import type { RawPublication } from '@/adapters/types'
 import type { AnyMessage } from '@/shared/messages'
 import { initialAppState, type AppState, type Detection, type OutputFormat } from '@/shared/types'
-import { createJob, isDuplicate, nextQueued, patchJob, removeJob } from './queue'
+import { activeJob, createJob, isDuplicate, nextQueued, patchJob, removeJob } from './queue'
 
 const OFFSCREEN_PATH = 'offscreen.html'
 const INSPECT_DEBOUNCE_MS = 300
+const STATE_KEY = 'appState'
 
 let state: AppState = { ...initialAppState, jobs: [] }
 let lastInspectedUrl: string | null = null
 let inspectTimer: ReturnType<typeof setTimeout> | null = null
 
+const restored = chrome.storage.session
+  .get(STATE_KEY)
+  .then((stored) => {
+    const saved = stored[STATE_KEY] as AppState | undefined
+    if (saved) state = saved
+  })
+  .catch(() => undefined)
+
 function setState(patch: Partial<AppState>): void {
   state = { ...state, ...patch }
+  chrome.storage.session.set({ [STATE_KEY]: state }).catch(() => undefined)
   chrome.runtime.sendMessage({ type: 'bg/state', state }).catch(() => undefined)
 }
 
@@ -20,11 +30,15 @@ function setDetection(detection: Detection): void {
   setState({ detection })
 }
 
-async function ensureOffscreen(): Promise<void> {
+async function hasOffscreen(): Promise<boolean> {
   const existing = await chrome.runtime.getContexts({
     contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
   })
-  if (existing.length > 0) return
+  return existing.length > 0
+}
+
+async function ensureOffscreen(): Promise<void> {
+  if (await hasOffscreen()) return
   await chrome.offscreen.createDocument({
     url: OFFSCREEN_PATH,
     reasons: [chrome.offscreen.Reason.BLOBS],
@@ -106,6 +120,11 @@ async function inspectIfChanged(force: boolean): Promise<void> {
 }
 
 async function pump(): Promise<void> {
+  const active = activeJob(state.jobs)
+  if (active && !(await hasOffscreen())) {
+    setState({ jobs: patchJob(state.jobs, active.id, { phase: 'queued', downloaded: 0 }) })
+  }
+
   const job = nextQueued(state.jobs)
   if (!job) return
   setState({ jobs: patchJob(state.jobs, job.id, { phase: 'downloading', downloaded: 0 }) })
@@ -134,20 +153,17 @@ function cancel(jobId: string): void {
   void pump()
 }
 
-chrome.runtime.onMessage.addListener((message: AnyMessage, _sender, sendResponse) => {
+function handle(message: AnyMessage): void {
   switch (message.type) {
-    case 'panel/getState':
-      sendResponse({ type: 'bg/state', state })
-      return false
     case 'panel/inspect':
       void inspectIfChanged(true)
-      return false
+      return
     case 'panel/start':
       enqueue(message.format)
-      return false
+      return
     case 'panel/cancel':
       cancel(message.jobId)
-      return false
+      return
     case 'worker/progress':
       setState({
         jobs: patchJob(state.jobs, message.jobId, {
@@ -156,10 +172,10 @@ chrome.runtime.onMessage.addListener((message: AnyMessage, _sender, sendResponse
           total: message.total,
         }),
       })
-      return false
+      return
     case 'worker/building':
       setState({ jobs: patchJob(state.jobs, message.jobId, { phase: 'building' }) })
-      return false
+      return
     case 'worker/saveFile':
       chrome.downloads
         .download({ url: message.url, filename: message.fileName, saveAs: false })
@@ -171,18 +187,27 @@ chrome.runtime.onMessage.addListener((message: AnyMessage, _sender, sendResponse
             }),
           }),
         )
-      return false
+      return
     case 'worker/done':
       setState({ jobs: patchJob(state.jobs, message.jobId, { phase: 'done', fileName: message.fileName }) })
       void pump()
-      return false
+      return
     case 'worker/error':
       setState({ jobs: patchJob(state.jobs, message.jobId, { phase: 'error', error: message.message }) })
       void pump()
-      return false
+      return
     default:
-      return false
+      return
   }
+}
+
+chrome.runtime.onMessage.addListener((message: AnyMessage, _sender, sendResponse) => {
+  if (message.type === 'panel/getState') {
+    restored.then(() => sendResponse({ type: 'bg/state', state }))
+    return true
+  }
+  restored.then(() => handle(message))
+  return false
 })
 
 chrome.tabs.onActivated.addListener(() => scheduleInspect(true))

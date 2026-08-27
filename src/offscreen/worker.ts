@@ -5,6 +5,8 @@ import { buildPdf, type PdfPageImage } from '@/builders/pdf'
 import type { AnyMessage } from '@/shared/messages'
 import type { OutputFormat, Publication } from '@/shared/types'
 
+const BUILD_HEARTBEAT_MS = 20_000
+
 let current: { jobId: string; abort: AbortController } | null = null
 
 function send(message: AnyMessage): void {
@@ -23,19 +25,24 @@ async function run(jobId: string, publication: Publication, format: OutputFormat
   })
 
   send({ type: 'worker/building', jobId })
+  const heartbeat = setInterval(() => send({ type: 'worker/building', jobId }), BUILD_HEARTBEAT_MS)
 
   let file: Blob
   let fileName: string
-  if (format === 'pdf') {
-    const pages: PdfPageImage[] = []
-    for (const blob of blobs) pages.push(await toJpegPage(blob))
-    file = buildPdf(pages)
-    fileName = `${publication.title}.pdf`
-  } else {
-    const pages: EpubPageImage[] = []
-    for (const blob of blobs) pages.push(await toEpubPage(blob))
-    file = buildEpub(publication.title, pages)
-    fileName = `${publication.title}.epub`
+  try {
+    if (format === 'pdf') {
+      const pages: PdfPageImage[] = []
+      for (const blob of blobs) pages.push(await toJpegPage(blob))
+      file = buildPdf(pages)
+      fileName = `${publication.title}.pdf`
+    } else {
+      const pages: EpubPageImage[] = []
+      for (const blob of blobs) pages.push(await toEpubPage(blob))
+      file = buildEpub(publication.title, pages)
+      fileName = `${publication.title}.epub`
+    }
+  } finally {
+    clearInterval(heartbeat)
   }
 
   const url = URL.createObjectURL(file)

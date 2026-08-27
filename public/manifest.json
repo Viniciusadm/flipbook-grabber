@@ -5,6 +5,7 @@
   "description": "Baixa publicações do AnyFlip página a página e gera um PDF ou EPUB.",
   "permissions": [
     "scripting",
+    "storage",
     "downloads",
     "sidePanel",
     "offscreen"
