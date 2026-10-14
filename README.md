@@ -1,96 +1,58 @@
 # Flipbook Grabber
 
-Salve publicações do AnyFlip como PDF ou EPUB, em um clique, sem perder qualidade.
+Flipbook Grabber is a Chrome extension (Manifest V3) that saves AnyFlip publications as PDF or EPUB. It reads the publication's page list from the player, downloads every page image at its original size and builds the file in the browser. This repository holds the extension source, written in TypeScript with a React side panel.
 
-Flipbooks são ótimos para ler no navegador e péssimos para guardar. Não tem botão de download, não dá pra abrir offline, não entra no Kindle e some no dia em que a conta que hospedou o arquivo for encerrada. O Flipbook Grabber resolve isso: abre a publicação, encontra todas as páginas sozinho e monta um arquivo que é seu.
+## How it works
 
-![Licença: Unlicense](https://img.shields.io/badge/licen%C3%A7a-Unlicense-brightgreen)
-![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4)
+The page at `anyflip.com` is a showcase; the actual reader runs in a cross-origin iframe, page files are named by hash, and the page index is encoded and only decoded at runtime by the player. The extension therefore runs a reader inside the player's frame (`chrome.scripting`) and takes the decoded index and the image base path from there. One read returns the whole book.
 
-## O que ele faz
+Downloads run in the background through an offscreen document, with up to 4 concurrent requests and up to 3 retries with exponential backoff per image. The side panel shows progress per page and lets you cancel. Opening another publication while a download runs adds it to a queue; jobs run one at a time and each can be cancelled on its own.
 
-**Imagem original, não captura de tela.** A extensão lê a lista real de páginas da publicação e baixa cada imagem no tamanho em que foi enviada. Nada de fotografar a tela e ficar com o resultado limitado à sua resolução.
+The PDF is written by a small in-house generator that embeds each page as a JPEG, one page per sheet at the image's size. The EPUB is an EPUB 3 package with the original images, zipped with `fflate`.
 
-**PDF ou EPUB, você escolhe.** O PDF sai com uma página por folha, no tamanho exato da imagem, e abre em qualquer lugar. O EPUB embarca as imagens originais sem reconversão, pronto pro seu leitor de e-book.
+| Path | What it is |
+| --- | --- |
+| [`src/adapters`](src/adapters) | Page discovery. `anyflip.ts` implements the `FlipbookAdapter` interface from `types.ts`. |
+| [`src/background`](src/background) | Service worker with the job state, the job queue and the downloader with concurrency and retries. |
+| [`src/offscreen`](src/offscreen) | Offscreen worker that downloads, converts and hands over the file. |
+| [`src/builders`](src/builders) | Image conversion, PDF generator and EPUB 3 packager. |
+| [`src/sidepanel`](src/sidepanel) | Side panel UI (React 19, Tailwind CSS 4). |
 
-**Livro inteiro de uma vez.** Uma publicação de 130 páginas é descoberta em uma leitura só. Você não precisa folhear página por página esperando carregar.
+Supporting another flipbook site means implementing `FlipbookAdapter` and adding it to the `adapters` list in `src/adapters/anyflip.ts`.
 
-**Não trava o navegador.** O download roda em segundo plano. Feche o painel, troque de aba, continue trabalhando. O trabalho segue e o arquivo aparece nos seus downloads quando terminar.
+## Requirements
 
-**Você enxerga o progresso.** As miniaturas vão acendendo conforme cada página chega, com contador e barra. Dá pra cancelar a qualquer momento, e o botão está sempre à mão.
+- Node.js and npm (Vite 6, TypeScript 5.7)
+- Chrome or Edge
 
-## Instalação
+## Build and install
 
-Ainda não está na Chrome Web Store. Por enquanto é instalação local, que leva menos de um minuto:
+The extension is not on the Chrome Web Store. Build it locally:
 
 ```bash
-git clone https://github.com/Viniciusadm/flipbook-grabber.git
-cd flipbook-grabber
 npm install
 npm run build
 ```
 
-Depois, no navegador:
+`npm run dev` rebuilds on every change. To load the build in the browser, open `chrome://extensions`, turn on Developer mode and choose "Load unpacked" with the `dist` folder.
 
-1. Abra `chrome://extensions`
-2. Ligue o **Modo do desenvolvedor** no canto superior direito
-3. Clique em **Carregar sem compactação** e selecione a pasta `dist`
+## Usage
 
-Funciona no Chrome e no Edge.
+Open a publication on AnyFlip, wait for it to load and click the extension icon. The side panel opens and finds the pages. Choose PDF or EPUB and start the download; the file lands in the browser's downloads when it finishes.
 
-## Como usar
-
-Abra a publicação no AnyFlip, espere carregar e clique no ícone da extensão. O painel lateral abre já procurando as páginas. Escolha PDF ou EPUB, clique em **Baixar publicação** e pronto.
-
-Com um download em andamento, é só abrir outra publicação: o painel detecta a nova página sozinho e o botão vira **Adicionar à fila**. Os downloads rodam um por vez, e cada um aparece na lista com seu próprio progresso, podendo ser cancelado sem afetar os demais.
-
-## Por baixo do capô
-
-Baixar um flipbook parece simples até você tentar. Três detalhes atrapalham:
-
-A página que você abre não é o leitor. O `anyflip.com` serve uma vitrine, e o leitor de verdade vive dentro de um iframe de outra origem, isolado por segurança do navegador.
-
-Os arquivos não seguem numeração. As páginas são nomeadas por hash, então não existe sequência do tipo `1.jpg`, `2.jpg` pra adivinhar.
-
-A lista de páginas chega embaralhada. O índice do livro vem codificado e só é aberto em tempo de execução pelo próprio leitor, o que inutiliza qualquer tentativa de baixar e interpretar o arquivo de configuração por fora.
-
-A saída é pedir a informação a quem já a tem. A extensão executa um leitor dentro do contexto do player, no frame certo, e recupera o índice já decodificado junto com o caminho base das imagens. Uma leitura devolve o livro inteiro.
-
-O restante é engenharia direta: uma fila de download com concorrência limitada e repetição automática em caso de falha de rede, e dois montadores de arquivo. O PDF é escrito por um gerador próprio que embute cada página como JPEG, sem depender de bibliotecas pesadas. O EPUB é empacotado seguindo o padrão EPUB 3.
-
-## Qualidade
-
-O gerador de PDF foi validado contra o poppler, que é o motor por trás de boa parte dos leitores de PDF do Linux: arquivo aberto, contagem de páginas conferida e todas as páginas renderizadas. O EPUB passa por verificação de estrutura, com o `mimetype` na posição exigida pela especificação e XML válido em todas as entradas.
-
-A suíte cobre a montagem das URLs, o comportamento da fila de download sob falha e cancelamento, e a estrutura dos dois formatos.
+## Tests
 
 ```bash
 npm test
 npm run typecheck
 ```
 
-## Estrutura
+The Vitest suite in [`test`](test) covers the AnyFlip URL building, the downloader under failures and cancellation, the job queue and the structure of the PDF and EPUB output.
 
-```
-src/
-  adapters/anyflip.ts     Descoberta das páginas
-  background/
-    service-worker.ts     Estado do trabalho
-    downloader.ts         Fila com concorrência e repetição
-  builders/
-    images.ts             Conversão de imagem
-    pdf.ts                Gerador de PDF
-    epub.ts               Empacotador EPUB 3
-  offscreen/worker.ts     Baixa, converte e entrega
-  sidepanel/              Interface
-```
+## Responsible use
 
-Suportar outro site de flipbook é implementar a interface `FlipbookAdapter` e registrá-lo. O resto do caminho não muda.
+The tool cannot tell what you are allowed to keep from what you are not; that part is on you. Use it to archive your own material, public documents, catalogs and publications you have permission to save, and respect the rights of whoever published them.
 
-## Licença
+## License
 
-Unlicense. O código está em domínio público. Use, modifique, venda, embuta em produto fechado, republique com outro nome. Não precisa pedir, não precisa creditar, não precisa avisar.
-
-## Uso responsável
-
-A ferramenta não distingue o que você tem direito de guardar do que não tem. Essa parte é com você. Use para arquivar material próprio, documentos públicos, catálogos e publicações que você tenha permissão de salvar. Respeite os direitos de quem publicou.
+Released into the public domain under the [Unlicense](LICENSE).
